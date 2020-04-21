@@ -9,6 +9,7 @@ from .models import Item, OrderItem, Order
 
 class HomeView(ListView):
     model = Item
+    paginate_by = 10
     template_name = "home-page.html"
 
 class ItemDetailView(DetailView):
@@ -65,6 +66,7 @@ def remove_from_cart(request, slug):
                 ordered=False
             )[0]
             order.items.remove(order_item)
+            order_item.delete()
             messages.info(request, "This item was removed from your cart")
             return redirect("core:product", slug=slug)
         else:
