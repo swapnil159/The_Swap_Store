@@ -4,7 +4,7 @@ autopep8==1.4.4
 certifi==2020.4.5.1
 chardet==3.0.4
 defusedxml==0.6.0
-Django==3.0
+Django==3.0.3
 django-allauth==0.41.0
 django-crispy-forms==1.9.0
 django-debug-toolbar==2.2
