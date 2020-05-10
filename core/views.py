@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.auth.decorators import login_required
@@ -7,7 +8,11 @@ from django.views.generic import ListView, DetailView, View
 from django.utils import timezone
 from django.shortcuts import redirect
 from .forms import CheckoutForm
-from .models import Item, OrderItem, Order, BillingAddress
+from .models import Item, OrderItem, Order, BillingAddress, Payment
+
+import stripe
+stripe.api_key = settings.STRIPE_SECRET_KEY
+
 
 # Create your views here.
 
@@ -64,20 +69,92 @@ class CheckoutView(View):
                 billing_address.save()
                 order.billing_address = billing_address
                 order.save()
-                # TODO: add redirect to selected payment option
-                return redirect('core:checkout')
-            messages.warning(self.request, "Checkout failed")
-            return redirect('core:checkout')
+                
+                if payment_option == 'S':
+                    return redirect('core:payment', payment_option="stripe")
+                elif payment_option=='P':
+                    return redirect('core:payment', payment_option="paypal")
+                else:
+                    messages.warning(self.request, "Invalid payment option selected.")
+                    return redirect('core:checkout')
         except ObjectDoesNotExist:
             messages.error(self.request, "You do not have an active order")
             return redirect("core:order-summary")
-        
 
 def products(request):
     context = {
         "items" : Item.objects.all()
     }
     return render(request, "product-page.html", context)
+
+class PaymentView(View):
+    def get(self, *args, **kwargs):
+        order=Order.objects.get(user=self.request.user, ordered=False)
+        context = {
+            'order' : order
+        }
+        return render(self.request, 'payment.html', context)
+
+    def post(self, *args, **kwargs):
+        order=Order.objects.get(user=self.request.user, ordered=False)
+        token = self.request.POST.get('stripeToken')
+        amount=int(order.get_total_amount() * 100)
+
+
+        try:
+            charge = stripe.Charge.create(
+                amount=amount,  #cents
+                currency="usd",
+                source=token,
+            )
+
+            #create the payment
+            payment = Payment()
+            payment.stripe_charge_id = charge['id']
+            payment.user = self.request.user
+            payment.amount = order.get_total_amount()
+            payment.save()
+
+            #assign the payment to order
+            order.ordered = True
+            order.payment = payment
+            order.save()
+
+            messages.success(self.request, "Your order was successful.")
+            return redirect("/")
+
+        except stripe.error.CardError as e:
+            # Since it's a decline, stripe.error.CardError will be caught
+            messages.error(self.request, f"{e.error.message}")
+            return redirect("/")
+        except stripe.error.RateLimitError as e:
+            # Too many requests made to the API too quickly
+            messages.error(self.request, "Rate limit error")
+            return redirect("/")
+        except stripe.error.InvalidRequestError as e:
+            # Invalid parameters were supplied to Stripe's API
+            messages.error(self.request, "Invalid parameters")
+            return redirect("/")
+        except stripe.error.AuthenticationError as e:
+            # Authentication with Stripe's API failed
+            # (maybe you changed API keys recently)
+            messages.error(self.request, "Not authenticated")
+            return redirect("/")
+        except stripe.error.APIConnectionError as e:
+            # Network communication with Stripe failed
+            messages.error(self.request, "API connection error")
+            return redirect("/")
+        except stripe.error.StripeError as e:
+            # Display a very generic error to the user, and maybe send
+            # yourself an email
+            messages.error(self.request, "Something went wrong. You have not been charged. Please try again")
+            return redirect("/")
+        except Exception as e:
+            # Send us an email
+            messages.error(self.request, "There was a serious error. We have been notified")
+            return redirect("/")
+
+
 
 @login_required
 def add_to_cart(request, slug):
