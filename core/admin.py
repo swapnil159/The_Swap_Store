@@ -1,9 +1,14 @@
 from django.contrib import admin
-from .models import Order, Item, OrderItem, Payment, BillingAddress
+from .models import Order, Item, OrderItem, Payment, BillingAddress, Coupon
+
+
+class OrderAdmin(admin.ModelAdmin):
+    list_display = ['user', 'ordered']
 
 # Register your models here.
-admin.site.register(Order)
+admin.site.register(Order, OrderAdmin)
 admin.site.register(OrderItem)
 admin.site.register(Item)
 admin.site.register(BillingAddress)
 admin.site.register(Payment)
+admin.site.register(Coupon)
